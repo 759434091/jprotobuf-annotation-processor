@@ -1,0 +1,28 @@
+plugins {
+    id 'org.jetbrains.kotlin.jvm' version '1.3.31'
+    id 'maven'
+}
+
+group = 'com.github.759434091'
+version = '0.0.1-SNAPSHOT'
+sourceCompatibility = '1.8'
+
+repositories {
+    mavenCentral()
+    mavenLocal()
+}
+
+dependencies {
+    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8"
+    implementation "org.jetbrains.kotlin:kotlin-reflect:1.3.31"
+    implementation group: 'com.squareup', name: 'javapoet', version: '1.11.1'
+    implementation group: 'com.baidu', name: 'jprotobuf', version: '1.11.6'
+    implementation group: 'org.projectlombok', name: 'lombok', version: '1.18.8'
+}
+
+compileKotlin {
+    kotlinOptions.jvmTarget = "1.8"
+}
+compileTestKotlin {
+    kotlinOptions.jvmTarget = "1.8"
+}
