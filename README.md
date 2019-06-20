@@ -32,7 +32,7 @@
         </dependency>
         
         <dependency>
-            <groupId>com.baidu.cpu</groupId>
+            <groupId>com.github.hept59434091.jprotobuf</groupId>
             <artifactId>jprotobuf-annotation-processor</artifactId>
             <version>1.0.0</version>
             <optional>true</optional>
