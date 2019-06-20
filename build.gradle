@@ -1,23 +1,48 @@
 plugins {
     id 'org.jetbrains.kotlin.jvm' version '1.3.31'
     id 'maven'
+    id 'maven-publish'
+    id 'java'
+    id 'com.github.johnrengelman.shadow' version '5.0.0'
 }
 
 group = 'com.github.759434091'
 version = '0.0.1-SNAPSHOT'
 sourceCompatibility = '1.8'
 
+artifacts {
+    archives shadowJar
+}
+
+publishing {
+    publications {
+        shadow(MavenPublication) { publication ->
+            project.shadow.component(publication)
+        }
+    }
+}
+
 repositories {
+    jcenter()
     mavenCentral()
     mavenLocal()
+}
+
+jar {
+    enabled = false
+}
+
+shadowJar {
+    //noinspection GroovyAccessibility
+    archiveClassifier = null
 }
 
 dependencies {
     implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8"
     implementation "org.jetbrains.kotlin:kotlin-reflect:1.3.31"
     implementation group: 'com.squareup', name: 'javapoet', version: '1.11.1'
-    implementation group: 'com.baidu', name: 'jprotobuf', version: '1.11.6'
-    implementation group: 'org.projectlombok', name: 'lombok', version: '1.18.8'
+    compileOnly group: 'com.baidu', name: 'jprotobuf', version: '1.11.6'
+    compileOnly group: 'org.projectlombok', name: 'lombok', version: '1.18.8'
 }
 
 compileKotlin {
