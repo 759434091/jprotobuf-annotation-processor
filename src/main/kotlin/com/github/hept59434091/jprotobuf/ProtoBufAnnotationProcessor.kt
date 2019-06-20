@@ -76,6 +76,14 @@ class ProtoBufAnnotationProcessor : AbstractProcessor() {
         roundEnv
                 .rootElements
                 .filter { it.getAnnotation(Ignore::class.java) == null }
+                .filter { root ->
+                    root.getAnnotation(ProtobufClass::class.java) != null
+                            || root
+                            .enclosedElements
+                            .any {
+                                it.getAnnotation(Protobuf::class.java) != null
+                            }
+                }
                 .map { it as TypeElement }
                 .forEach { root ->
                     val oriClassName = ClassName.get(root)
