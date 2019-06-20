@@ -16,7 +16,7 @@
 [Jprotobuf-rpc-socket](https://github.com/baidu/Jprotobuf-rpc-socket)
 
 ## 使用方法
-改注解处理器依赖jProtobuf以及Lombok
+该注解处理器依赖jProtobuf以及Lombok
 ````
         <dependency>
             <groupId>com.baidu</groupId>
