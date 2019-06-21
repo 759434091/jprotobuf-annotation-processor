@@ -17,6 +17,7 @@ import com.google.protobuf.Descriptors
 import com.google.protobuf.UninitializedMessageException
 import com.squareup.javapoet.*
 import lombok.SneakyThrows
+import java.io.IOException
 import java.util.*
 import javax.annotation.processing.AbstractProcessor
 import javax.annotation.processing.RoundEnvironment
@@ -42,6 +43,8 @@ class ProtoBufAnnotationProcessor : AbstractProcessor() {
             .findLast { it.name == "defaultProtoBuf" }!!
             .javaField!!
             .getAnnotation(Protobuf::class.java)
+    private val ioExceptionClassName = ClassName.get(IOException::class.java)
+    private val runtimeExceptionClassName = ClassName.get(RuntimeException::class.java)
     private val optionalClassName = ClassName.get(Optional::class.java)
     private val codecClassName = ClassName.get(Codec::class.java)
     private val codedOutputStreamClassName = ClassName.get(CodedOutputStream::class.java)
@@ -73,17 +76,19 @@ class ProtoBufAnnotationProcessor : AbstractProcessor() {
         if (annotations.isEmpty()) {
             return true
         }
-        roundEnv
-                .rootElements
+        val protoBufTypeElement = roundEnv
+                .getElementsAnnotatedWith(Protobuf::class.java)
+                .asSequence()
+                .map { it.enclosingElement }
                 .filter { it.getAnnotation(Ignore::class.java) == null }
-                .filter { root ->
-                    root.getAnnotation(ProtobufClass::class.java) != null
-                            || root
-                            .enclosedElements
-                            .any {
-                                it.getAnnotation(Protobuf::class.java) != null
-                            }
-                }
+                .distinct()
+        val protoBufClassTypeElement = roundEnv
+                .getElementsAnnotatedWith(ProtobufClass::class.java)
+                .asSequence()
+                .filter { it.getAnnotation(Ignore::class.java) == null }
+
+        (protoBufTypeElement + protoBufClassTypeElement)
+                .distinct()
                 .map { it as TypeElement }
                 .forEach { root ->
                     val oriClassName = ClassName.get(root)
@@ -95,6 +100,7 @@ class ProtoBufAnnotationProcessor : AbstractProcessor() {
                     val size = MethodSpec
                             .methodBuilder("size")
                             .addModifiers(Modifier.PUBLIC)
+                            .addAnnotation(Override::class.java)
                             .returns(TypeName.INT)
                             .addParameter(oriClassName, "object")
                             .addStatement("int size = 0")
@@ -114,11 +120,11 @@ class ProtoBufAnnotationProcessor : AbstractProcessor() {
 
                     val doWriteTo = MethodSpec
                             .methodBuilder("doWriteTo")
-                            .addAnnotation(SneakyThrows::class.java)
                             .addModifiers(Modifier.PUBLIC)
                             .returns(TypeName.VOID)
                             .addParameter(oriClassName, "object")
                             .addParameter(codedOutputStreamClassName, "output")
+                            .beginControlFlow("try")
                             .let { doWriteToMethodSpecBuilder ->
                                 fieldInfoList.forEach {
                                     appendDoWriteToElement(
@@ -129,15 +135,19 @@ class ProtoBufAnnotationProcessor : AbstractProcessor() {
                                 }
                                 return@let doWriteToMethodSpecBuilder
                             }
+                            .nextControlFlow("catch (\$T e)", ioExceptionClassName)
+                            .addStatement("throw new \$T(e)", runtimeExceptionClassName)
+                            .endControlFlow()
                             .build()
 
 
                     val readFrom = MethodSpec
                             .methodBuilder("readFrom")
                             .addModifiers(Modifier.PUBLIC)
-                            .addAnnotation(SneakyThrows::class.java)
+                            .addAnnotation(Override::class.java)
                             .returns(oriClassName)
                             .addParameter(codedInputStreamClassName, "input")
+                            .beginControlFlow("try")
                             .addStatement("\$T ret = new \$T()", oriClassName, oriClassName)
                             .let { readFromMethodSpecBuilder ->
                                 fieldInfoList
@@ -172,6 +182,9 @@ class ProtoBufAnnotationProcessor : AbstractProcessor() {
                             .addStatement("input.skipField(tag)")
                             .endControlFlow()
                             .addStatement("return ret")
+                            .nextControlFlow("catch (\$T e)", ioExceptionClassName)
+                            .addStatement("throw new \$T(e)", runtimeExceptionClassName)
+                            .endControlFlow()
                             .build()
 
 
@@ -183,13 +196,12 @@ class ProtoBufAnnotationProcessor : AbstractProcessor() {
 
 
                     val javaFile = JavaFile
-                            .builder(root.enclosingElement.toString(), typeSpec)
+                            .builder(ClassName.get(root).packageName(), typeSpec)
                             .indent("    ")
                             .build()
 
 
                     javaFile.writeTo(processingEnv.filer)
-                    javaFile.writeTo(System.out)
                 }
         return true
     }
@@ -198,7 +210,7 @@ class ProtoBufAnnotationProcessor : AbstractProcessor() {
         val codecType = ParameterizedTypeName.get(codecClassName, oriClassName)
         val protoType = ClassName.get(
                 oriClassName.packageName(),
-                "${oriClassName.simpleName()}\$\$JProtoBufClass"
+                "${oriClassName.reflectionName().substring(oriClassName.packageName().length + 1)}\$\$JProtoBufClass"
         )
 
         // field
@@ -209,8 +221,8 @@ class ProtoBufAnnotationProcessor : AbstractProcessor() {
         // method
         val encodeMethodSpec = MethodSpec
                 .methodBuilder("encode")
-                .addAnnotation(SneakyThrows::class.java)
                 .addModifiers(Modifier.PUBLIC)
+                .addAnnotation(Override::class.java)
                 .addParameter(oriClassName, "object")
                 .returns(ArrayTypeName.of(TypeName.BYTE))
                 .addStatement("int size = size(object)")
@@ -226,8 +238,8 @@ class ProtoBufAnnotationProcessor : AbstractProcessor() {
 
         val decodeMethodSpec = MethodSpec
                 .methodBuilder("decode")
-                .addAnnotation(SneakyThrows::class.java)
                 .addModifiers(Modifier.PUBLIC)
+                .addAnnotation(Override::class.java)
                 .addParameter(ArrayTypeName.of(TypeName.BYTE), "bytes")
                 .returns(oriClassName)
                 .addStatement(
@@ -239,22 +251,27 @@ class ProtoBufAnnotationProcessor : AbstractProcessor() {
 
         val writeToMethodSpec = MethodSpec
                 .methodBuilder("writeTo")
-                .addAnnotation(SneakyThrows::class.java)
                 .addModifiers(Modifier.PUBLIC)
+                .addAnnotation(Override::class.java)
                 .returns(TypeName.VOID)
+                .beginControlFlow("try")
                 .addParameter(oriClassName, "object")
                 .addParameter(codedOutputStreamClassName, "output")
                 .addStatement("byte[] bytes = encode(object)")
                 .addStatement("output.writeRawBytes(bytes)")
                 .addStatement("output.flush()")
+                .nextControlFlow("catch (\$T e)", ioExceptionClassName)
+                .addStatement("throw new \$T(e)", runtimeExceptionClassName)
+                .endControlFlow()
                 .build()
 
 
         val getDescriptorMethodSpec = MethodSpec
                 .methodBuilder("getDescriptor")
-                .addAnnotation(SneakyThrows::class.java)
                 .addModifiers(Modifier.PUBLIC)
+                .addAnnotation(Override::class.java)
                 .returns(descriptorClassName)
+                .beginControlFlow("try")
                 .beginControlFlow("if (descriptor != null)")
                 .addStatement("return this.descriptor")
                 .endControlFlow()
@@ -263,6 +280,9 @@ class ProtoBufAnnotationProcessor : AbstractProcessor() {
                         codedConstantClassName,
                         oriClassName
                 )
+                .nextControlFlow("catch (\$T e)", ioExceptionClassName)
+                .addStatement("throw new \$T(e)", runtimeExceptionClassName)
+                .endControlFlow()
                 .build()
 
 
@@ -694,6 +714,7 @@ class ProtoBufAnnotationProcessor : AbstractProcessor() {
                                     "boolean" -> Boolean::class.java
                                     "byte" -> Byte::class.java
                                     "short" -> Short::class.java
+                                    "char" -> Char::class.java
                                     "int" -> Int::class.java
                                     "long" -> Long::class.java
                                     "float" -> Float::class.java
@@ -757,10 +778,10 @@ class ProtoBufAnnotationProcessor : AbstractProcessor() {
                     }
 
             ProtobufProxyUtils.TYPE_MAPPING[fieldTypeClass]
-                    ?: if (Enum::class.java.isAssignableFrom(fieldTypeClass)) {
-                        FieldType.ENUM
-                    } else {
-                        FieldType.OBJECT
+                    ?: when {
+                        Enum::class.java.isAssignableFrom(fieldTypeClass) -> FieldType.ENUM
+                        fieldTypeClass == java.lang.Character::class.java || fieldTypeClass == Char::class.java -> FieldType.INT32
+                        else -> FieldType.OBJECT
                     }
         } else {
             protoBufAnnotation.fieldType

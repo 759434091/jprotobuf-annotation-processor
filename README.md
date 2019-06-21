@@ -16,19 +16,12 @@
 [Jprotobuf-rpc-socket](https://github.com/baidu/Jprotobuf-rpc-socket)
 
 ## 使用方法
-该注解处理器依赖jProtobuf以及Lombok
+该注解处理器依赖jProtobuf, 一般jProtobuf应用已经引入
 ````
         <dependency>
             <groupId>com.baidu</groupId>
             <artifactId>jprotobuf</artifactId>
             <version>1.11.6</version>
-        </dependency>
-
-        <dependency>
-            <groupId>org.projectlombok</groupId>
-            <artifactId>lombok</artifactId>
-            <version>1.18.8</version>
-            <optional>true</optional>
         </dependency>
         
         <dependency>
